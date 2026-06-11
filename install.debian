@@ -7,23 +7,9 @@ BIN_PATH="/usr/local/bin/nginx-master"
 WORK_DIR="/home/nginx-master"
 RUN_USER="nginx-master"
 RUN_GROUP="nginx-master"
+
 DOWNLOAD_URL_AMD64="https://github.com/pch18/nginxMaster/releases/download/latest/app-linux-amd64"
 DOWNLOAD_URL_ARM64="https://github.com/pch18/nginxMaster/releases/download/latest/app-linux-arm64"
-
-echo "==> 检测系统架构"
-ARCH="$(uname -m)"
-case "${ARCH}" in
-  x86_64|amd64)
-    DOWNLOAD_URL="${DOWNLOAD_URL_AMD64}"
-    ;;
-  aarch64|arm64)
-    DOWNLOAD_URL="${DOWNLOAD_URL_ARM64}"
-    ;;
-  *)
-    echo "错误：暂不支持的系统架构 ${ARCH}"
-    exit 1
-    ;;
-esac
 
 echo "==> 检查是否为 root 用户"
 if [ "$(id -u)" -ne 0 ]; then
@@ -31,19 +17,72 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+echo "==> 安装 nginx"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y nginx ca-certificates
+
+echo "==> 检查程序文件 ${BIN_PATH}"
+if [ -s "${BIN_PATH}" ]; then
+  echo "==> 检测到 ${BIN_PATH} 已存在，跳过下载"
+else
+  echo "==> 未检测到 ${BIN_PATH}，准备下载"
+
+  echo "==> 检测 wget 是否存在"
+  if ! command -v wget >/dev/null 2>&1; then
+    echo "==> 安装 wget"
+    apt-get install -y wget
+  fi
+
+  echo "==> 检测系统架构"
+  ARCH="$(uname -m)"
+  case "${ARCH}" in
+    x86_64|amd64)
+      DOWNLOAD_URL="${DOWNLOAD_URL_AMD64}"
+      ;;
+    aarch64|arm64)
+      DOWNLOAD_URL="${DOWNLOAD_URL_ARM64}"
+      ;;
+    *)
+      echo "错误：暂不支持的系统架构 ${ARCH}"
+      exit 1
+      ;;
+  esac
+
+  echo "==> 下载程序到 ${BIN_PATH}"
+  wget -O "${BIN_PATH}" "${DOWNLOAD_URL}"
+fi
+
+echo "==> 设置程序执行权限"
+chmod 755 "${BIN_PATH}"
+
+echo "==> 检查程序是否可执行"
+if [ ! -x "${BIN_PATH}" ]; then
+  echo "错误：${BIN_PATH} 不可执行"
+  exit 1
+fi
+
+echo "==> 检查 ${RUN_GROUP} 用户组是否存在"
+if ! getent group "${RUN_GROUP}" >/dev/null 2>&1; then
+  echo "==> 创建系统组 ${RUN_GROUP}"
+  groupadd --system "${RUN_GROUP}"
+else
+  echo "==> 用户组 ${RUN_GROUP} 已存在"
+fi
+
 echo "==> 检查 ${RUN_USER} 用户是否存在"
 if ! id -u "${RUN_USER}" >/dev/null 2>&1; then
   echo "==> 创建系统用户 ${RUN_USER}"
-  useradd --system --create-home --home-dir "${WORK_DIR}" --shell /usr/sbin/nologin "${RUN_USER}"
+  useradd \
+    --system \
+    --gid "${RUN_GROUP}" \
+    --create-home \
+    --home-dir "${WORK_DIR}" \
+    --shell /usr/sbin/nologin \
+    "${RUN_USER}"
 else
   echo "==> 用户 ${RUN_USER} 已存在"
 fi
-
-echo "==> 下载程序到 ${BIN_PATH}"
-wget -O "${BIN_PATH}" "${DOWNLOAD_URL}"
-
-echo "==> 设置执行权限"
-chmod 755 "${BIN_PATH}"
 
 echo "==> 创建工作目录 ${WORK_DIR}"
 mkdir -p "${WORK_DIR}"
@@ -53,21 +92,22 @@ chown -R "${RUN_USER}:${RUN_GROUP}" "${WORK_DIR}"
 chmod 755 "${WORK_DIR}"
 
 echo "==> 检查 nginx.service 是否存在"
-if systemctl status nginx.service >/dev/null 2>&1; then
+if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
   echo "==> 停止 nginx.service"
   systemctl stop nginx.service || true
 
   echo "==> 禁用 nginx.service 开机自启"
   systemctl disable nginx.service || true
 
-  echo "==> nginx.service 已停止并禁用"
+  echo "==> nginx.service 已停止并禁用，由 ${SERVICE_NAME} 管理 nginx"
 else
   echo "==> 未发现 nginx.service，跳过"
 fi
 
 echo "==> 生成 systemd 服务文件 ${SERVICE_FILE}"
 
-SERVICE_CONTENT="[Unit]
+cat > "${SERVICE_FILE}" <<EOF
+[Unit]
 Description=${SERVICE_NAME}
 After=network-online.target
 Wants=network-online.target
@@ -89,9 +129,7 @@ SyslogIdentifier=${SERVICE_NAME}
 
 [Install]
 WantedBy=multi-user.target
-"
-
-echo "${SERVICE_CONTENT}" > "${SERVICE_FILE}"
+EOF
 
 echo "==> 重新加载 systemd 配置"
 systemctl daemon-reload
