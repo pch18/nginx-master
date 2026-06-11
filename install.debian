@@ -5,8 +5,6 @@ SERVICE_NAME="nginx-master"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 BIN_PATH="/usr/local/bin/nginx-master"
 WORK_DIR="/home/nginx-master"
-RUN_USER="nginx-master"
-RUN_GROUP="nginx-master"
 
 DOWNLOAD_URL_AMD64="https://github.com/pch18/nginxMaster/releases/download/latest/app-linux-amd64"
 DOWNLOAD_URL_ARM64="https://github.com/pch18/nginxMaster/releases/download/latest/app-linux-arm64"
@@ -62,35 +60,6 @@ if [ ! -x "${BIN_PATH}" ]; then
   exit 1
 fi
 
-echo "==> 检查 ${RUN_GROUP} 用户组是否存在"
-if ! getent group "${RUN_GROUP}" >/dev/null 2>&1; then
-  echo "==> 创建系统组 ${RUN_GROUP}"
-  groupadd --system "${RUN_GROUP}"
-else
-  echo "==> 用户组 ${RUN_GROUP} 已存在"
-fi
-
-echo "==> 检查 ${RUN_USER} 用户是否存在"
-if ! id -u "${RUN_USER}" >/dev/null 2>&1; then
-  echo "==> 创建系统用户 ${RUN_USER}"
-  useradd \
-    --system \
-    --gid "${RUN_GROUP}" \
-    --create-home \
-    --home-dir "${WORK_DIR}" \
-    --shell /usr/sbin/nologin \
-    "${RUN_USER}"
-else
-  echo "==> 用户 ${RUN_USER} 已存在"
-fi
-
-echo "==> 创建工作目录 ${WORK_DIR}"
-mkdir -p "${WORK_DIR}"
-
-echo "==> 设置目录权限 (${RUN_USER}:${RUN_GROUP})"
-chown -R "${RUN_USER}:${RUN_GROUP}" "${WORK_DIR}"
-chmod 755 "${WORK_DIR}"
-
 echo "==> 检查 nginx.service 是否存在"
 if systemctl list-unit-files nginx.service >/dev/null 2>&1; then
   echo "==> 停止 nginx.service"
@@ -114,9 +83,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=${RUN_USER}
-Group=${RUN_GROUP}
-WorkingDirectory=${WORK_DIR}
 Environment=NGINX_MASTER_BASE=${WORK_DIR}
 ExecStart=${BIN_PATH}
 
@@ -150,3 +116,4 @@ echo "  查看状态: systemctl status ${SERVICE_NAME}"
 echo "  重启服务: systemctl restart ${SERVICE_NAME}"
 echo "  停止服务: systemctl stop ${SERVICE_NAME}"
 echo "  查看日志: journalctl -u ${SERVICE_NAME} -f"
+echo "  查看 nginx 进程: ps -o user,group,pid,ppid,args | grep '[n]ginx'"
