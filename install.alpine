@@ -5,8 +5,6 @@ SERVICE_NAME="nginx-master"
 SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
 BIN_PATH="/usr/local/bin/nginx-master"
 WORK_DIR="/home/nginx-master"
-RUN_USER="nginx-master"
-RUN_GROUP="nginx-master"
 
 DOWNLOAD_URL_AMD64="https://github.com/pch18/nginxMaster/releases/download/latest/app-linux-amd64"
 DOWNLOAD_URL_ARM64="https://github.com/pch18/nginxMaster/releases/download/latest/app-linux-arm64"
@@ -60,33 +58,6 @@ if [ ! -x "${BIN_PATH}" ]; then
   exit 1
 fi
 
-echo "==> 检查 ${RUN_GROUP} 用户组是否存在"
-if ! getent group "${RUN_GROUP}" >/dev/null 2>&1; then
-  echo "==> 创建系统组 ${RUN_GROUP}"
-  addgroup -S "${RUN_GROUP}"
-else
-  echo "==> 用户组 ${RUN_GROUP} 已存在"
-fi
-
-echo "==> 检查 ${RUN_USER} 用户是否存在"
-if ! id -u "${RUN_USER}" >/dev/null 2>&1; then
-  echo "==> 创建系统用户 ${RUN_USER}"
-  adduser -S -D -H \
-    -h "${WORK_DIR}" \
-    -s /sbin/nologin \
-    -G "${RUN_GROUP}" \
-    "${RUN_USER}"
-else
-  echo "==> 用户 ${RUN_USER} 已存在"
-fi
-
-echo "==> 创建工作目录 ${WORK_DIR}"
-mkdir -p "${WORK_DIR}"
-
-echo "==> 设置工作目录权限 (${RUN_USER}:${RUN_GROUP})"
-chown -R "${RUN_USER}:${RUN_GROUP}" "${WORK_DIR}"
-chmod 755 "${WORK_DIR}"
-
 echo "==> 检查 nginx 服务是否存在"
 if [ -x /etc/init.d/nginx ]; then
   echo "==> 停止 nginx"
@@ -108,7 +79,6 @@ cat > "${SERVICE_FILE}" <<EOF
 description="${SERVICE_NAME}"
 
 command="${BIN_PATH}"
-command_user="${RUN_USER}:${RUN_GROUP}"
 directory="${WORK_DIR}"
 
 supervisor="supervise-daemon"
@@ -118,17 +88,11 @@ pidfile="/run/${SERVICE_NAME}.pid"
 output_log="/var/log/${SERVICE_NAME}.log"
 error_log="/var/log/${SERVICE_NAME}.err"
 
-start_stop_daemon_args="--env NGINX_MASTER_BASE=${WORK_DIR}"
+supervise_daemon_args="--env NGINX_MASTER_BASE=${WORK_DIR}"
 
 depend() {
     need net
     after firewall
-}
-
-start_pre() {
-    checkpath -d -o ${RUN_USER}:${RUN_GROUP} -m 0755 "${WORK_DIR}"
-    checkpath -f -o ${RUN_USER}:${RUN_GROUP} -m 0644 "/var/log/${SERVICE_NAME}.log"
-    checkpath -f -o ${RUN_USER}:${RUN_GROUP} -m 0644 "/var/log/${SERVICE_NAME}.err"
 }
 EOF
 
@@ -152,3 +116,4 @@ echo "  重启服务: rc-service ${SERVICE_NAME} restart"
 echo "  停止服务: rc-service ${SERVICE_NAME} stop"
 echo "  查看日志: tail -f /var/log/${SERVICE_NAME}.log"
 echo "  查看错误日志: tail -f /var/log/${SERVICE_NAME}.err"
+echo "  查看 nginx 进程: ps -o user,group,pid,ppid,args | grep '[n]ginx'"
