@@ -76,23 +76,29 @@ echo "==> 生成 OpenRC 服务文件 ${SERVICE_FILE}"
 cat > "${SERVICE_FILE}" <<EOF
 #!/sbin/openrc-run
 
-description="${SERVICE_NAME}"
+description="nginx-master"
 
-command="${BIN_PATH}"
-directory="${WORK_DIR}"
+command="/usr/local/bin/nginx-master"
+directory="/home/nginx-master"
 
 supervisor="supervise-daemon"
 
-pidfile="/run/${SERVICE_NAME}.pid"
+pidfile="/run/nginx-master.pid"
 
-output_log="/var/log/${SERVICE_NAME}.log"
-error_log="/var/log/${SERVICE_NAME}.err"
+output_log="/var/log/nginx-master.log"
+error_log="/var/log/nginx-master.err"
 
-supervise_daemon_args="--env NGINX_MASTER_BASE=${WORK_DIR}"
+supervise_daemon_args="--env NGINX_MASTER_BASE=/home/nginx-master"
 
 depend() {
     need net
     after firewall
+}
+
+start_pre() {
+    checkpath -d -m 0755 "/home/nginx-master"
+    checkpath -f -m 0644 "/var/log/nginx-master.log"
+    checkpath -f -m 0644 "/var/log/nginx-master.err"
 }
 EOF
 
